@@ -1,0 +1,557 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<title>Würfel — wie zufällig ist zufällig?</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="description" content="Zufallsgeneratoren im Prüfstand: Chi-Quadrat, Korrelation, Gitterfüllung — und der drehbare Würfel, in dem schlechte Generatoren als Ebenen sichtbar werden." />
+
+<style>
+  :root {
+    --papier: #E9E4DA;
+    --feld:   #F4F1EA;
+    --tief:   #DCD5C7;
+    --linie:  #C6BCA9;
+    --tinte:  #26221C;
+    --leise:  #6E665A;
+    --blau:   #1D4E89;
+    --alarm:  #A62639;
+    --fokus:  #1D4E89;
+    --schatten: 0 1px 0 rgba(38,34,28,.05), 0 10px 24px -16px rgba(38,34,28,.5);
+
+    --f-text: -apple-system, "Segoe UI Variable Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --f-fest: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, "DejaVu Sans Mono", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --papier: #16150F;
+      --feld:   #1D1B14;
+      --tief:   #100F0A;
+      --linie:  #34301F;
+      --tinte:  #E6E1D4;
+      --leise:  #948B78;
+      --blau:   #6FA8E0;
+      --alarm:  #E0697A;
+      --fokus:  #6FA8E0;
+      --schatten: 0 1px 0 rgba(255,255,255,.03), 0 12px 30px -18px #000;
+    }
+  }
+  :root[data-theme="dark"] {
+    --papier: #16150F;
+    --feld:   #1D1B14;
+    --tief:   #100F0A;
+    --linie:  #34301F;
+    --tinte:  #E6E1D4;
+    --leise:  #948B78;
+    --blau:   #6FA8E0;
+    --alarm:  #E0697A;
+    --fokus:  #6FA8E0;
+    --schatten: 0 1px 0 rgba(255,255,255,.03), 0 12px 30px -18px #000;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--papier); color: var(--tinte);
+    font-family: var(--f-text); font-size: 15px; line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .blatt {
+    max-width: 1120px; margin: 0 auto;
+    padding: clamp(20px, 4vw, 44px) clamp(14px, 3vw, 28px) 64px;
+    display: flex; flex-direction: column; gap: 20px;
+  }
+
+  header.kopf { display: flex; flex-direction: column; gap: 10px; }
+  .marke {
+    font-family: var(--f-fest); font-size: 10px; letter-spacing: .2em;
+    text-transform: uppercase; color: var(--leise);
+    display: flex; gap: 12px; align-items: center; margin: 0;
+  }
+  .marke::after { content: ""; flex: 1; height: 1px; background: var(--linie); }
+  h1 {
+    font-weight: 700; font-size: clamp(30px, 5.4vw, 54px); line-height: 1.02;
+    letter-spacing: -.035em; margin: 0; text-wrap: balance;
+  }
+  h1 span { color: var(--blau); }
+  .vorspann { max-width: 66ch; color: var(--leise); margin: 0; }
+  .vorspann b { color: var(--tinte); font-weight: 600; }
+
+  .leiste {
+    display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+    background: var(--feld); border: 1px solid var(--linie);
+    padding: 10px 12px; box-shadow: var(--schatten);
+  }
+  .kl {
+    font-family: var(--f-fest); font-size: 10px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--leise);
+  }
+  button, select, input[type=text] {
+    font-family: var(--f-fest); font-size: 12px; color: var(--tinte);
+    background: var(--papier); border: 1px solid var(--linie); border-radius: 0;
+    padding: 7px 11px; cursor: pointer; letter-spacing: .03em;
+  }
+  button:hover, select:hover { border-color: var(--blau); }
+  button:active { background: var(--tief); }
+  button.haupt { background: var(--blau); border-color: var(--blau); color: var(--feld); }
+  button.haupt:hover { filter: brightness(1.12); }
+  button[aria-pressed="true"] { background: var(--blau); border-color: var(--blau); color: var(--feld); }
+  input[type=text] { width: 8em; cursor: text; }
+  :focus-visible { outline: 2px solid var(--fokus); outline-offset: 2px; }
+
+  .buehne { display: grid; grid-template-columns: 1.35fr 1fr; gap: 20px; align-items: start; }
+  @media (max-width: 860px) { .buehne { grid-template-columns: minmax(0,1fr); } }
+
+  .kasten {
+    background: var(--feld); border: 1px solid var(--linie);
+    box-shadow: var(--schatten); display: flex; flex-direction: column;
+  }
+  .kasten-kopf {
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    padding: 9px 12px; border-bottom: 1px solid var(--linie);
+  }
+  .kasten-leib { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+  canvas { display: block; width: 100%; height: auto; background: var(--tief); }
+  canvas#wuerfel { cursor: grab; touch-action: none; }
+  canvas#wuerfel:active { cursor: grabbing; }
+
+  .werte {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 1px; background: var(--linie); border: 1px solid var(--linie);
+  }
+  .wert { background: var(--feld); padding: 9px 11px; display: flex; flex-direction: column; gap: 1px; }
+  .wert dt {
+    font-family: var(--f-fest); font-size: 9px; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--leise); margin: 0;
+  }
+  .wert dd {
+    margin: 0; font-family: var(--f-fest); font-size: 16px;
+    font-variant-numeric: tabular-nums; letter-spacing: -.02em; overflow-wrap: anywhere;
+  }
+  .wert dd small { font-size: 10px; color: var(--leise); display: block; letter-spacing: 0; }
+  .wert dd.gut { color: var(--blau); }
+  .wert dd.schlecht { color: var(--alarm); }
+
+  .urteil {
+    font-family: var(--f-fest); font-size: 12px; letter-spacing: .06em;
+    padding: 8px 12px; border: 1px solid var(--linie); background: var(--tief);
+  }
+  .urteil.gut { color: var(--blau); border-color: var(--blau); }
+  .urteil.schlecht { color: var(--alarm); border-color: var(--alarm); }
+
+  .noten {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 26px; border-top: 1px solid var(--linie); padding-top: 22px;
+  }
+  .noten section { display: flex; flex-direction: column; gap: 7px; }
+  .noten h3 { font-size: 16px; margin: 0; letter-spacing: -.015em; }
+  .noten p { margin: 0; color: var(--leise); font-size: 14px; max-width: 52ch; }
+  .noten b { color: var(--tinte); font-weight: 600; }
+  code { font-family: var(--f-fest); font-size: .9em; background: var(--tief); padding: 1px 4px; color: var(--tinte); }
+
+  footer {
+    border-top: 1px solid var(--linie); padding-top: 16px;
+    font-family: var(--f-fest); font-size: 10px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--leise);
+  }
+</style>
+</head>
+<body>
+
+<div class="blatt">
+
+  <header class="kopf">
+    <p class="marke">Prüfstand für Zufallsgeneratoren · alles im Browser gerechnet</p>
+    <h1>Würfel: wie zufällig ist <span>zufällig</span>?</h1>
+    <p class="vorspann">
+      Ein schlechter Zufallsgenerator sieht aus wie ein guter. Die Zahlen wirken wirr, der
+      Mittelwert stimmt, die Verteilung ist flach — und trotzdem liegen sie in Wahrheit auf
+      wenigen Ebenen. <b>Man sieht es erst, wenn man je drei aufeinanderfolgende Zahlen als
+      Punkt im Raum aufträgt und den Würfel dreht.</b> Dann klappen die Ebenen auf einmal auf.
+    </p>
+  </header>
+
+  <div class="leiste">
+    <span class="kl">Generator</span>
+    <select id="gen">
+      <option value="mulberry">mulberry32 — solide</option>
+      <option value="mathrandom">Math.random — eingebaut</option>
+      <option value="lcgok">LCG, exakt gerechnet</option>
+      <option value="lcgkaputt" selected>LCG, kaputt (meiner)</option>
+      <option value="randu">RANDU — berüchtigt</option>
+      <option value="zaehler">Zähler — kein Zufall</option>
+    </select>
+    <span class="kl">Startwert</span>
+    <input type="text" id="seed" value="12345" inputmode="numeric" />
+    <span class="kl">Punkte</span>
+    <select id="menge">
+      <option value="20000">20 000</option>
+      <option value="60000" selected>60 000</option>
+      <option value="150000">150 000</option>
+    </select>
+    <button id="messen" class="haupt">Messen</button>
+    <button id="drehen" aria-pressed="true">Drehung an</button>
+    <button id="einrasten" hidden>Ebenen einrasten</button>
+    <span class="kl" id="lage" style="margin-left:auto">bereit</span>
+  </div>
+
+  <div class="buehne">
+    <div class="kasten">
+      <div class="kasten-kopf">
+        <span class="kl">Der Würfel — je drei Zahlen ein Punkt</span>
+        <span class="kl" id="dreh-hinweis" style="margin-left:auto">ziehen zum Drehen</span>
+      </div>
+      <div class="kasten-leib">
+        <canvas id="wuerfel" width="640" height="560" aria-label="Dreidimensionale Punktwolke aufeinanderfolgender Zufallszahlen"></canvas>
+        <div class="urteil" id="urteil">—</div>
+      </div>
+    </div>
+
+    <div class="kasten">
+      <div class="kasten-kopf"><span class="kl">Flächenbild — je zwei Zahlen ein Punkt</span></div>
+      <div class="kasten-leib">
+        <canvas id="flaeche" width="420" height="420" aria-label="Zweidimensionale Punktwolke"></canvas>
+        <p class="kl" id="flaeche-note">—</p>
+        <canvas id="bits" width="420" height="120" aria-label="Häufigkeit jedes Bits"></canvas>
+        <p class="kl">Anteil gesetzter Bits je Position · Soll 0,5</p>
+      </div>
+    </div>
+  </div>
+
+  <dl class="werte">
+    <div class="wert"><dt>Chi-Quadrat</dt><dd id="w-chi">—<small>Soll 255 ± 23</small></dd></div>
+    <div class="wert"><dt>Serielle Korrelation</dt><dd id="w-korr">—<small>Soll ≈ 0</small></dd></div>
+    <div class="wert"><dt>Fläche gefüllt</dt><dd id="w-2d">—<small>64 × 64 Felder</small></dd></div>
+    <div class="wert"><dt>Würfel gefüllt</dt><dd id="w-3d">—<small>24³ Felder</small></dd></div>
+    <div class="wert"><dt>Bit-Auffälligkeit</dt><dd id="w-bit">—<small>größte Abweichung</small></dd></div>
+    <div class="wert"><dt>Periode</dt><dd id="w-per">—<small>bis Wiederholung</small></dd></div>
+  </dl>
+
+  <div class="noten">
+    <section>
+      <h3>Warum drei Dimensionen</h3>
+      <p>
+        <b>RANDU</b> war jahrzehntelang auf IBM-Großrechnern in Gebrauch und besteht jeden
+        einfachen Test: die Verteilung ist flach, die Korrelation null, das Flächenbild
+        makellos. Erst im Raum zeigt sich, dass alle Punkte auf <b>15 Ebenen</b> liegen.
+        Dreh den Würfel, bis sie einrasten — der Moment ist ziemlich unangenehm.
+      </p>
+    </section>
+    <section>
+      <h3>Mein eigener Fehler</h3>
+      <p>
+        Der Eintrag „LCG, kaputt“ ist kein Strohmann, sondern ein Fehler, den ich zweimal
+        ausgeliefert habe: <code>seed * 1103515245</code> überschreitet in JavaScript
+        <code>2⁵³</code>. Das Produkt wird gerundet, und ausgerechnet die unteren Bits, die
+        man danach abschneidet, sind der gerundete Rest. Chi-Quadrat <b>5118</b> statt 255.
+      </p>
+    </section>
+    <section>
+      <h3>Was die Zahlen bedeuten</h3>
+      <p>
+        <b>Chi-Quadrat</b> prüft, ob alle 256 Bytewerte gleich häufig sind — bei echtem
+        Zufall liegt es nahe 255. <b>Serielle Korrelation</b> misst, ob eine Zahl die
+        nächste verrät. <b>Gitterfüllung</b> zählt, welcher Anteil aller Felder überhaupt
+        getroffen wird; wer Ebenen bildet, lässt große Bereiche leer.
+      </p>
+    </section>
+    <section>
+      <h3>Wofür das reicht</h3>
+      <p>
+        Diese Tests finden grobe Schnitzer, nicht Schwäche gegen einen Angreifer. Ein
+        Generator kann alles hier bestehen und trotzdem <b>vorhersagbar</b> sein — mulberry32
+        etwa ist gut für Simulationen und völlig ungeeignet für Schlüssel. Dafür gibt es
+        <code>crypto.getRandomValues</code>, und dafür braucht es andere Prüfungen.
+      </p>
+    </section>
+  </div>
+
+  <footer>Würfel · Chi-Quadrat, serielle Korrelation, Gitterfüllung, Periodensuche · Punktwolken in Canvas, ohne Bibliothek</footer>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const nf = new Intl.NumberFormat("de-DE");
+
+  /* ====================== Die Generatoren ======================
+     Jeder liefert rohe 32-Bit-Werte; die Gleitkommazahl entsteht erst daraus.
+     Der Bit-Test muss auf dem rohen Wert laufen, sonst misst er die Skalierung
+     statt den Generator. */
+  // Jeder Eintrag nennt seine Breite. Ein 31-Bit-Generator auf 32 Bit hochzuschieben
+  // hieße, das immer leere unterste Bit als Fehler des Generators zu messen — genau
+  // die Verwechslung, die der Bit-Test aufdecken soll.
+  const GEN = {
+    mulberry: { bits: 32, mk: (seed) => { let a = seed >>> 0;
+      return () => { a = (a + 0x6D2B79F5) | 0;
+        let t = Math.imul(a ^ (a >>> 15), 1 | a);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return (t ^ (t >>> 14)) >>> 0; }; } },
+
+    mathrandom: { bits: 32, mk: () => () => (Math.random() * 4294967296) >>> 0 },
+
+    lcgok: { bits: 31, mk: (seed) => { let s = seed | 0;
+      return () => { s = (Math.imul(s, 1103515245) + 12345) & 0x7fffffff; return s >>> 0; }; } },
+
+    // Genau der Fehler: s * 1103515245 liegt jenseits von 2^53, das Produkt wird
+    // gerundet, und die unteren Bits, die danach maskiert werden, sind der Müll.
+    lcgkaputt: { bits: 31, mk: (seed) => { let s = seed >>> 0;
+      return () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s >>> 0; }; } },
+
+    randu: { bits: 31, mk: (seed) => { let s = (seed | 1) >>> 0;
+      return () => { s = (Math.imul(s, 65539) & 0x7fffffff) >>> 0; return s; }; } },
+
+    zaehler: { bits: 32, mk: (seed) => { let i = seed >>> 0;
+      return () => { i = (i + 1) % 9973; return ((i / 9973) * 4294967296) >>> 0; }; } }
+  };
+
+  const S = { punkte: null, n: 0, dreht: true, rx: -0.42, ry: 0.72, name: "", parallel: false };
+
+  /* ========================== Messungen ========================= */
+  function messe(mk, n, breite) {
+    const roh = new Uint32Array(n);
+    for (let i = 0; i < n; i++) roh[i] = mk();
+    const spanne = Math.pow(2, breite);
+    const f = new Float64Array(n);
+    for (let i = 0; i < n; i++) f[i] = roh[i] / spanne;
+
+    // Chi-Quadrat über 256 Bytewerte
+    const z = new Int32Array(256);
+    for (let i = 0; i < n; i++) z[(f[i] * 256) | 0]++;
+    const e = n / 256;
+    let chi = 0;
+    for (const c of z) chi += (c - e) * (c - e) / e;
+
+    // serielle Korrelation
+    let sx = 0, sy = 0, sxy = 0, sxx = 0, syy = 0;
+    for (let i = 1; i < n; i++) { const x = f[i - 1], y = f[i];
+      sx += x; sy += y; sxy += x * y; sxx += x * x; syy += y * y; }
+    const m = n - 1;
+    const korr = (m * sxy - sx * sy) / Math.sqrt((m * sxx - sx * sx) * (m * syy - sy * sy));
+
+    // Gitterfüllung in zwei und drei Dimensionen
+    const G2 = 64, G3 = 24;
+    const f2 = new Uint8Array(G2 * G2), f3 = new Uint8Array(G3 * G3 * G3);
+    for (let i = 1; i < n; i++) f2[((f[i - 1] * G2) | 0) * G2 + ((f[i] * G2) | 0)] = 1;
+    for (let i = 2; i < n; i++)
+      f3[((((f[i - 2] * G3) | 0) * G3) + ((f[i - 1] * G3) | 0)) * G3 + ((f[i] * G3) | 0)] = 1;
+    let c2 = 0, c3 = 0;
+    for (const v of f2) c2 += v;
+    for (const v of f3) c3 += v;
+
+    // Bit-Häufigkeit auf dem rohen Wert
+    const bits = new Float64Array(breite);
+    const probe = Math.min(n, 60000);
+    for (let i = 0; i < probe; i++) { const v = roh[i];
+      for (let b = 0; b < breite; b++) if (v & (1 << b)) bits[b]++; }
+    for (let b = 0; b < breite; b++) bits[b] /= probe;
+    let maxAbw = 0, maxBit = 0;
+    for (let b = 0; b < breite; b++) { const a = Math.abs(bits[b] - 0.5); if (a > maxAbw) { maxAbw = a; maxBit = b; } }
+
+    // Periode: taucht der erste Zustand wieder auf?
+    let periode = null;
+    const erste = roh[0];
+    for (let i = 1; i < n; i++) if (roh[i] === erste) {
+      let gleich = true;
+      for (let k = 1; k < Math.min(8, n - i); k++) if (roh[i + k] !== roh[k]) { gleich = false; break; }
+      if (gleich) { periode = i; break; }
+    }
+
+    // Auch echter Zufall füllt ein Gitter nicht vollständig: bei n Würfen auf z Zellen
+    // sind im Mittel 1−(1−1/z)^n besetzt. Eine feste Schwelle wäre bei kleiner
+    // Stichprobe eine Falle für gute Generatoren.
+    const soll = (z, k) => 1 - Math.pow(1 - 1 / z, k);
+    return { f, roh, chi, korr,
+      fuell2: c2 / (G2 * G2), soll2: soll(G2 * G2, n - 1),
+      fuell3: c3 / (G3 * G3 * G3), soll3: soll(G3 * G3 * G3, n - 2),
+      bits, maxAbw, maxBit, periode, n, breite };
+  }
+
+  /* ========================== Zeichnen =========================== */
+  function farben() {
+    const cs = getComputedStyle(document.documentElement);
+    return {
+      tief: cs.getPropertyValue("--tief").trim(),
+      blau: cs.getPropertyValue("--blau").trim(),
+      alarm: cs.getPropertyValue("--alarm").trim(),
+      linie: cs.getPropertyValue("--linie").trim(),
+      leise: cs.getPropertyValue("--leise").trim()
+    };
+  }
+
+  function zeichneWuerfel() {
+    const c = $("wuerfel"), g = c.getContext("2d"), F = farben();
+    g.fillStyle = F.tief; g.fillRect(0, 0, c.width, c.height);
+    if (!S.punkte) return;
+    const cx = c.width / 2, cy = c.height / 2, sk = Math.min(c.width, c.height) * 0.34;
+    const sinX = Math.sin(S.rx), cosX = Math.cos(S.rx), sinY = Math.sin(S.ry), cosY = Math.cos(S.ry);
+
+    // Perspektive skaliert verschieden tiefe Ebenen unterschiedlich und verschmiert
+    // sie ineinander. Für den Blick von der Kante braucht es Parallelprojektion.
+    const pr = (x, y, z) => {
+      x -= .5; y -= .5; z -= .5;
+      const x1 = x * cosY - z * sinY, z1 = x * sinY + z * cosY;
+      const y1 = y * cosX - z1 * sinX, z2 = y * sinX + z1 * cosX;
+      const p = S.parallel ? 1 : 2.6 / (2.6 + z2);
+      return [cx + x1 * sk * p * 2, cy + y1 * sk * p * 2, S.parallel ? (0.5 - z2) : p];
+    };
+
+    // Drahtwürfel
+    g.strokeStyle = F.linie; g.lineWidth = 1; g.globalAlpha = .55;
+    const ecken = [[0,0,0],[1,0,0],[1,1,0],[0,1,0],[0,0,1],[1,0,1],[1,1,1],[0,1,1]];
+    const kanten = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
+    g.beginPath();
+    for (const [a, b] of kanten) {
+      const p1 = pr(...ecken[a]), p2 = pr(...ecken[b]);
+      g.moveTo(p1[0], p1[1]); g.lineTo(p2[0], p2[1]);
+    }
+    g.stroke();
+    g.globalAlpha = 1;
+
+    const f = S.punkte, n = Math.min(f.length - 2, 30000);
+    g.fillStyle = F.blau;
+    for (let i = 0; i < n; i++) {
+      const p = pr(f[i], f[i + 1], f[i + 2]);
+      g.globalAlpha = .10 + .35 * p;
+      g.fillRect(p[0], p[1], 1.4, 1.4);
+    }
+    g.globalAlpha = 1;
+  }
+
+  function zeichneFlaeche(f) {
+    const c = $("flaeche"), g = c.getContext("2d"), F = farben();
+    g.fillStyle = F.tief; g.fillRect(0, 0, c.width, c.height);
+    g.fillStyle = F.blau;
+    const n = Math.min(f.length - 1, 40000);
+    g.globalAlpha = .28;
+    for (let i = 0; i < n; i++) g.fillRect(f[i] * c.width, (1 - f[i + 1]) * c.height, 1.3, 1.3);
+    g.globalAlpha = 1;
+  }
+
+  function zeichneBits(bits) {
+    const c = $("bits"), g = c.getContext("2d"), F = farben();
+    g.fillStyle = F.tief; g.fillRect(0, 0, c.width, c.height);
+    const bw = c.width / bits.length, mitte = c.height / 2;
+    g.strokeStyle = F.linie; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(0, mitte + .5); g.lineTo(c.width, mitte + .5); g.stroke();
+    for (let b = 0; b < bits.length; b++) {
+      const abw = bits[b] - 0.5;
+      const h = abw * 2 * (c.height - 8);
+      g.fillStyle = Math.abs(abw) > 0.02 ? F.alarm : F.blau;
+      g.fillRect(b * bw + 1, mitte - Math.max(0, h), bw - 2, Math.abs(h) || 1);
+    }
+  }
+
+  /* ========================== Bewerten ========================== */
+  function bewerte(r) {
+    const erwartet = 255, streuung = Math.sqrt(2 * 255);
+    const chiWeit = Math.abs(r.chi - erwartet) / streuung;
+    const gruende = [];
+    if (chiWeit > 4) gruende.push("Verteilung der Bytewerte weit daneben");
+    if (Math.abs(r.korr) > 0.02) gruende.push("aufeinanderfolgende Zahlen hängen zusammen");
+    if (r.fuell3 < r.soll3 * 0.97)
+      gruende.push("der Würfel bleibt zu " + ((1 - r.fuell3 / r.soll3) * 100).toFixed(0) + " % leerer als er dürfte");
+    if (r.fuell2 < r.soll2 * 0.98) gruende.push("schon die Fläche hat Lücken");
+    if (r.maxAbw > 0.02) gruende.push("Bit " + r.maxBit + " ist unausgewogen");
+    if (r.periode) gruende.push("wiederholt sich nach " + nf.format(r.periode) + " Zahlen");
+    return gruende;
+  }
+
+  function setze(id, wert, hinweis, schlecht) {
+    const el = $(id);
+    el.innerHTML = wert + "<small>" + hinweis + "</small>";
+    el.className = schlecht === undefined ? "" : (schlecht ? "schlecht" : "gut");
+  }
+
+  function lauf() {
+    const art = $("gen").value;
+    const seed = parseInt($("seed").value, 10) || 12345;
+    const n = +$("menge").value;
+    $("lage").textContent = "misst …";
+    const t0 = performance.now();
+    const g = GEN[art];
+    const r = messe(g.mk(seed), n, g.bits);
+    const ms = performance.now() - t0;
+
+    S.punkte = r.f; S.name = $("gen").selectedOptions[0].textContent;
+    $("einrasten").hidden = art !== "randu";
+    zeichneWuerfel(); zeichneFlaeche(r.f); zeichneBits(r.bits);
+
+    const chiWeit = Math.abs(r.chi - 255) / Math.sqrt(510);
+    setze("w-chi", r.chi.toFixed(0), "Soll 255 ± 23", chiWeit > 4);
+    setze("w-korr", r.korr.toFixed(4), "Soll ≈ 0", Math.abs(r.korr) > 0.02);
+    setze("w-2d", (r.fuell2 * 100).toFixed(1) + " %", "erwartet " + (r.soll2 * 100).toFixed(1) + " %", r.fuell2 < r.soll2 * 0.98);
+    setze("w-3d", (r.fuell3 * 100).toFixed(1) + " %", "erwartet " + (r.soll3 * 100).toFixed(1) + " %", r.fuell3 < r.soll3 * 0.97);
+    setze("w-bit", r.maxAbw.toFixed(4), "Bit " + r.maxBit + " von " + r.breite, r.maxAbw > 0.02);
+    setze("w-per", r.periode ? nf.format(r.periode) : "keine gefunden",
+      r.periode ? "Zahlen" : "in " + nf.format(n), !!r.periode);
+
+    const gruende = bewerte(r);
+    const u = $("urteil");
+    if (!gruende.length) {
+      u.className = "urteil gut";
+      u.textContent = "Besteht alle Prüfungen hier — was nichts über Vorhersagbarkeit sagt.";
+    } else {
+      u.className = "urteil schlecht";
+      u.textContent = "Fällt durch: " + gruende.join(" · ");
+    }
+    $("flaeche-note").textContent = "je zwei aufeinanderfolgende Zahlen als Punkt · " +
+      nf.format(Math.min(n - 1, 40000)) + " Punkte";
+    $("lage").textContent = "fertig · " + nf.format(n) + " Zahlen · " + ms.toFixed(0) + " ms";
+  }
+
+  /* ========================== Bedienung ========================= */
+  let zieht = false, lx = 0, ly = 0;
+  const cv = $("wuerfel");
+  cv.addEventListener("pointerdown", (e) => { zieht = true; lx = e.clientX; ly = e.clientY; cv.setPointerCapture(e.pointerId); });
+  cv.addEventListener("pointermove", (e) => {
+    if (!zieht) return;
+    S.ry += (e.clientX - lx) * 0.008; S.rx += (e.clientY - ly) * 0.008;
+    lx = e.clientX; ly = e.clientY; zeichneWuerfel();
+  });
+  cv.addEventListener("pointerup", () => { zieht = false; });
+  cv.addEventListener("pointercancel", () => { zieht = false; });
+
+  // RANDUs Punkte liegen auf Ebenen senkrecht zu (9, −6, 1). Wichtig: die Normale
+  // muss IN der Bildebene liegen, nicht in der Tiefe — sonst schaut man die Ebenen
+  // von vorn an und sieht eine volle Fläche. Bedingung ist also Tiefenanteil null.
+  $("einrasten").addEventListener("click", () => {
+    const ny = -6, nz = 1;
+    S.ry = 0;                            // damit ist der gedrehte Zwischenwert u = nz
+    S.rx = Math.atan2(-nz, ny);          // macht die Tiefenkomponente der Normalen null
+    S.parallel = true;
+    S.dreht = false;
+    $("drehen").setAttribute("aria-pressed", "false");
+    $("drehen").textContent = "Drehung aus";
+    zeichneWuerfel();
+    $("lage").textContent = "Blick entlang (9, −6, 1) — der Richtung, auf der RANDUs Ebenen senkrecht stehen";
+  });
+
+  $("messen").addEventListener("click", lauf);
+  $("gen").addEventListener("change", lauf);
+  $("menge").addEventListener("change", lauf);
+  $("seed").addEventListener("change", lauf);
+  $("drehen").addEventListener("click", () => {
+    S.dreht = !S.dreht;
+    $("drehen").setAttribute("aria-pressed", String(S.dreht));
+    $("drehen").textContent = S.dreht ? "Drehung an" : "Drehung aus";
+  });
+
+  const langsam = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (langsam) { S.dreht = false; $("drehen").setAttribute("aria-pressed", "false"); $("drehen").textContent = "Drehung aus"; }
+
+  function schleife() {
+    if (S.dreht && !zieht) { S.ry += 0.0035; zeichneWuerfel(); }
+    requestAnimationFrame(schleife);
+  }
+
+  const neuZeichnen = () => { if (S.punkte) { zeichneWuerfel(); lauf(); } };
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", neuZeichnen);
+  new MutationObserver(neuZeichnen).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+  lauf();
+  requestAnimationFrame(schleife);
+})();
+</script>
+</body>
+</html>
