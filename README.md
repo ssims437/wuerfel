@@ -81,6 +81,8 @@ gut für Simulationen und völlig ungeeignet für Schlüssel oder Token. Dafür 
 
 [MIT](LICENSE)
 
-Verwandt: [Redundanz](https://github.com/ssims437/redundanz) ·
+Verwandt: [Plotterblätter](https://github.com/ssims437/plotterblaetter) ·
+[Redundanz](https://github.com/ssims437/redundanz) ·
 [Reparatur](https://github.com/ssims437/reparatur) ·
-[Plotterblätter](https://github.com/ssims437/plotterblaetter)
+[Rechenwerk](https://github.com/ssims437/rechenwerk) ·
+[Nachkomma](https://github.com/ssims437/nachkomma)
